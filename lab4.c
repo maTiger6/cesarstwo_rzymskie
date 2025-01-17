@@ -27,7 +27,6 @@ typedef struct signalHandler_args_t
     pthread_t tid;
     sigset_t *pMask;
     pthread_t* threads;
-    pthread_t* more_threads;
 } signalHandler_args_t;
 
 typedef struct tragarz_args_t
@@ -127,7 +126,6 @@ int main(int argc, char** argv)
     signalHandler_args_t sh_args; 
     sh_args.pMask = &newMask;
     sh_args.threads = tragarze;
-    sh_args.more_threads = robole;
 
     pthread_attr_t tattr;
     pthread_attr_init(&tattr);
@@ -181,11 +179,17 @@ int main(int argc, char** argv)
     printf("Sending signal\n");
     kill(0, SIGTERM);
     printf("Signal sent\n");
-    for(int i = 0; i < N; i++)
+    for(int i = 0; i < Q; i++)
     {
         if(0 != pthread_join(tragarze[i], NULL))
             ERR("pthread_join()");
     }
+    for(int i = 0; i < R; i++)
+    {
+        if(0 != pthread_join(robole[i], NULL))
+            ERR("pthread_join()");
+    }
+
     printf("Joined\n");
     return 0;
 }
