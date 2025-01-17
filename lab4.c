@@ -7,6 +7,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <semaphore.h>
 
 #define ERR(source) (perror(source), fprintf(stderr, "%s:%d\n", __FILE__, __LINE__), exit(EXIT_FAILURE))
 #define N 20
@@ -29,21 +30,31 @@ typedef struct signalHandler_args_t
     pthread_t* more_threads;
 } signalHandler_args_t;
 
+typedef struct tragarz_args_t
+{
+    dzialka_t* dzialki;
+    sem_t sem;
+} tragarz_args_t;
+
 
 void* tragarz_work(void* arg)
 {
-    dzialka_t* dzialki = (dzialka_t*) arg;
+    tragarz_args_t* args = (tragarz_args_t*) arg;
     int next;
-    struct timespec ts = {0, 0};
+    struct timespec ts = {0, 0}, ts_port = {0, 1.5e7};
     while(1)
     {
+        sem_wait(&args->sem);
+        nanosleep(&ts_port, NULL);
+        sem_post(&args->sem);
+
         next = rand() % N;
         ts.tv_nsec = (5 + next)*1e6;
         nanosleep(&ts, NULL);
-        pthread_mutex_lock(&dzialki[next].mtx);
-        dzialki[next].worki++;
-        pthread_mutex_unlock(&dzialki[next].mtx);
-        pthread_cond_signal(&dzialki[next].cv);
+        pthread_mutex_lock(&args->dzialki[next].mtx);
+        args->dzialki[next].worki++;
+        pthread_mutex_unlock(&args->dzialki[next].mtx);
+        pthread_cond_signal(&args->dzialki[next].cv);
     }
     return NULL;
 }
@@ -127,9 +138,13 @@ int main(int argc, char** argv)
 #pragma endregion setting_signalHandler
 
 #pragma region thread_creation
+    tragarz_args_t tragarz_args;
+    tragarz_args.dzialki = dzialki;
+    if(0 != sem_init(&tragarz_args.sem, 0, 3))
+        ERR("sem_init()");
     for(int i = 0; i < Q; i++)
     {
-        if(0 != pthread_create(&tragarze[i], NULL, tragarz_work, dzialki))
+        if(0 != pthread_create(&tragarze[i], NULL, tragarz_work, &tragarz_args))
             ERR("pthread_create()");
     }
     for(int i = 0; i < R; i++)
@@ -140,7 +155,8 @@ int main(int argc, char** argv)
 #pragma endregion thread_creation
 
 #pragma region result_printing
-    struct timespec ts = {0, 2e8};
+    struct timespec ts = {0, 7e8};
+    printf("Printing every 0.%ds\n\n", (int)(ts.tv_nsec/1e8) );
     for(int i = 0; i < 10; i++)
     {
         nanosleep(&ts, NULL);
