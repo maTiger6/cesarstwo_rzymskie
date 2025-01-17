@@ -18,6 +18,7 @@ typedef struct dzialka_t
     pthread_mutex_t mtx;
     int worki;
     int posypane;
+    pthread_cond_t cv;
 } dzialka_t;
 
 typedef struct signalHandler_args_t
@@ -25,7 +26,9 @@ typedef struct signalHandler_args_t
     pthread_t tid;
     sigset_t *pMask;
     pthread_t* threads;
+    pthread_t* more_threads;
 } signalHandler_args_t;
+
 
 void* tragarz_work(void* arg)
 {
@@ -39,6 +42,29 @@ void* tragarz_work(void* arg)
         nanosleep(&ts, NULL);
         pthread_mutex_lock(&dzialki[next].mtx);
         dzialki[next].worki++;
+        pthread_mutex_unlock(&dzialki[next].mtx);
+        pthread_cond_signal(&dzialki[next].cv);
+    }
+    return NULL;
+}
+
+void* robol_work(void* arg)
+{
+    dzialka_t* dzialki = (dzialka_t*) arg;
+    int next, ret_val;
+    struct timespec ts = {0, 5e8};
+    while(1)
+    {
+        ret_val = 0;
+        next = rand() % N;
+        pthread_mutex_lock(&dzialki[next].mtx);
+        while(!( dzialki[next].worki > 0 && dzialki[next].posypane < 50 ) && ret_val == 0)
+            ret_val = pthread_cond_timedwait(&dzialki[next].cv, &dzialki[next].mtx, &ts);
+        if(ret_val == 0)
+        {
+            dzialki[next].worki--;
+            dzialki[next].posypane++;
+        }
         pthread_mutex_unlock(&dzialki[next].mtx);
     }
     return NULL;
@@ -73,9 +99,12 @@ int main(int argc, char** argv)
         dzialki[i].posypane = 0;
         if(0 != pthread_mutex_init(&dzialki[i].mtx, NULL))
             ERR("pthread_mutex_init()");
+        if(0 != pthread_cond_init(&dzialki[i].cv, NULL))
+            ERR("pthread_cond_init()");
     }
 
     pthread_t tragarze[Q];
+    pthread_t robole[R];
 
 #pragma region setting_signalHandler
     sigset_t oldMask, newMask;
@@ -87,6 +116,7 @@ int main(int argc, char** argv)
     signalHandler_args_t sh_args; 
     sh_args.pMask = &newMask;
     sh_args.threads = tragarze;
+    sh_args.more_threads = robole;
 
     pthread_attr_t tattr;
     pthread_attr_init(&tattr);
@@ -96,23 +126,42 @@ int main(int argc, char** argv)
         ERR("Couldn't create signal handling thread!");
 #pragma endregion setting_signalHandler
 
+#pragma region thread_creation
     for(int i = 0; i < Q; i++)
     {
         if(0 != pthread_create(&tragarze[i], NULL, tragarz_work, dzialki))
             ERR("pthread_create()");
     }
+    for(int i = 0; i < R; i++)
+    {
+        if(0 != pthread_create(&robole[i], NULL, robol_work, dzialki))
+            ERR("pthread_create()");
+    }
+#pragma endregion thread_creation
 
+#pragma region result_printing
+    struct timespec ts = {0, 2e8};
     for(int i = 0; i < 10; i++)
     {
-        sleep(1);
+        nanosleep(&ts, NULL);
+        printf("Czekające: ");
         for(int i = 0; i < N; i++)
         {
             pthread_mutex_lock(&dzialki[i].mtx);
             printf("%d ", dzialki[i].worki);
             pthread_mutex_unlock(&dzialki[i].mtx);
         }
-        printf("\n");
+        printf("\nPosypane: ");
+        for(int i = 0; i < N; i++)
+        {
+            pthread_mutex_lock(&dzialki[i].mtx);
+            printf("%d ", dzialki[i].posypane);
+            pthread_mutex_unlock(&dzialki[i].mtx);
+        }
+        printf("\n\n");
     }
+#pragma endregion result_printing
+    
     printf("Sending signal\n");
     kill(0, SIGTERM);
     printf("Signal sent\n");
