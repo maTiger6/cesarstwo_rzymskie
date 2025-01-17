@@ -33,6 +33,7 @@ typedef struct tragarz_args_t
 {
     dzialka_t* dzialki;
     sem_t sem;
+    pthread_barrier_t* gej_bariera;
 } tragarz_args_t;
 
 
@@ -54,6 +55,8 @@ void* tragarz_work(void* arg)
         args->dzialki[next].worki++;
         pthread_mutex_unlock(&args->dzialki[next].mtx);
         pthread_cond_signal(&args->dzialki[next].cv);
+
+        pthread_barrier_wait(args->gej_bariera);
     }
     return NULL;
 }
@@ -99,6 +102,18 @@ void* signal_handler(void* voidArgs)
     return NULL;
 }
 
+void* gejowanie(void* arg)
+{
+    pthread_barrier_t* gej_bariera = (pthread_barrier_t*) arg;
+
+    while(1)
+    {
+        pthread_barrier_wait(gej_bariera);
+        printf("veni vidi vici roboli wypuścici\n");
+    }
+    return NULL;
+}
+
 int main(int argc, char** argv)
 {
     srand(time(NULL));
@@ -115,6 +130,10 @@ int main(int argc, char** argv)
 
     pthread_t tragarze[Q];
     pthread_t robole[R];
+    pthread_t gej_usz_ce_plus_plus;
+    pthread_barrier_t gej_bariera;
+    if(0 != pthread_barrier_init(&gej_bariera, NULL, R + 1))
+        ERR("pthread_barrier_init()");
 
 #pragma region setting_signalHandler
     sigset_t oldMask, newMask;
@@ -138,6 +157,8 @@ int main(int argc, char** argv)
 #pragma region thread_creation
     tragarz_args_t tragarz_args;
     tragarz_args.dzialki = dzialki;
+    tragarz_args.gej_bariera = &gej_bariera;
+
     if(0 != sem_init(&tragarz_args.sem, 0, 3))
         ERR("sem_init()");
     for(int i = 0; i < Q; i++)
@@ -150,11 +171,14 @@ int main(int argc, char** argv)
         if(0 != pthread_create(&robole[i], NULL, robol_work, dzialki))
             ERR("pthread_create()");
     }
+    if(0 != pthread_create(&gej_usz_ce_plus_plus, NULL, gejowanie, &gej_bariera))
+            ERR("pthread_create()");
+
 #pragma endregion thread_creation
 
 #pragma region result_printing
-    struct timespec ts = {0, 7e8};
-    printf("Printing every 0.%ds\n\n", (int)(ts.tv_nsec/1e8) );
+    struct timespec ts = {1, 0};
+    printf("Printing every 1s\n\n");
     for(int i = 0; i < 10; i++)
     {
         nanosleep(&ts, NULL);
