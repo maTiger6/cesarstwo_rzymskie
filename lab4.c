@@ -64,12 +64,13 @@ void* tragarz_work(void* arg)
 void* robol_work(void* arg)
 {
     dzialka_t* dzialki = (dzialka_t*) arg;
-    int next, ret_val;
-    struct timespec ts = {0, 5e8};
+    int next = rand() % N, ret_val;
+    struct timespec ts;// = {0, 5e8};
     while(1)
     {
         ret_val = 0;
-        next = rand() % N;
+        clock_gettime(CLOCK_REALTIME, &ts);
+        ts.tv_nsec += 5e8;
         pthread_mutex_lock(&dzialki[next].mtx);
         while(!( dzialki[next].worki > 0 && dzialki[next].posypane < 50 ) && ret_val == 0)
             ret_val = pthread_cond_timedwait(&dzialki[next].cv, &dzialki[next].mtx, &ts);
@@ -78,6 +79,8 @@ void* robol_work(void* arg)
             dzialki[next].worki--;
             dzialki[next].posypane++;
         }
+        else
+            next = rand() % N;
         pthread_mutex_unlock(&dzialki[next].mtx);
     }
     return NULL;
@@ -179,7 +182,7 @@ int main(int argc, char** argv)
 #pragma region result_printing
     struct timespec ts = {1, 0};
     printf("Printing every 1s\n\n");
-    for(int i = 0; i < 10; i++)
+    for(int i = 0; i < 15; i++)
     {
         nanosleep(&ts, NULL);
         printf("Czekające: ");
